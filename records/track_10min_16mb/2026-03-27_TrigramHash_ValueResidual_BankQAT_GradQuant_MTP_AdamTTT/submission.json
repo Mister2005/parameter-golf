@@ -1,0 +1,9 @@
+{
+  "name": "TrigramHash + Value Residual + Bank-Level QAT + GradQuant (Int5/Int6/Int7) + MTP + Adam TTT",
+  "val_bpb": 1.63711028,
+  "bytes_total": 5909270,
+  "blurb": "Fast-compute run (local5060_fast_seed1337) used profile=fast, seed=1337, layers=8, dim=384, heads=6, kv=3, seq=1024, batch_tokens=32768, iters=1200, eval_stride=256, val_max_tokens=8000000, ttt_enabled=0. Observed results from this run: final_int6_roundtrip val_bpb=1.6768, final_int6_sliding_window_exact val_bpb=1.63711028, final_int6_sliding_window_s64_exact val_bpb=1.63503057. Legal score-first TTT was disabled for this run. Final submission size (int6+lzma) = 5909270 bytes.",
+  "author": "Varun Gupta",
+  "github_id": "Mister2005",
+  "date": "2026-03-27"
+}
