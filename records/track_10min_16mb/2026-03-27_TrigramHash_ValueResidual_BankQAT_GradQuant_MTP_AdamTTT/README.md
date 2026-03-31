@@ -1,6 +1,6 @@
 # TrigramHash + Value Residual + Bank-QAT + GradQuant + MTP + Adam TTT
 
-This run folder implements the approach described in Strategy.md, with the training and output structure aligned to the repository baseline requirements.
+This run folder implements the experiment approach as a standalone record submission, with the training and output structure aligned to the repository baseline requirements.
 
 ## Current Status
 
@@ -84,6 +84,7 @@ This run folder implements the approach described in Strategy.md, with the train
 ## Files
 
 - train_gpt.py: Full run implementation
-- Strategy.md: Design and intended improvements
 - submission.json: Submission metadata with measured fast-run values
-- logs/: Training and evaluation logs
+- README.md: Run documentation and compliance notes
+- final_model.pt: Exported fp16/bf16 checkpoint artifact
+- final_model.int6.ptz: Quantized compressed submission artifact

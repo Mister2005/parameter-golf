@@ -433,6 +433,10 @@ class TrigramHashEmbedding(nn.Module):
     """3-token context hash embedding (extends BigramHash to trigram)."""
     def __init__(self, trigram_vocab_size: int, trigram_dim: int, model_dim: int):
         super().__init__()
+        if trigram_vocab_size < 2:
+            raise ValueError('trigram_vocab_size must be >= 2 to avoid modulo-by-zero in trigram hashing')
+        if trigram_dim <= 0:
+            raise ValueError('trigram_dim must be positive')
         self.trigram_vocab_size = trigram_vocab_size; self.embed = nn.Embedding(trigram_vocab_size, trigram_dim)
         nn.init.zeros_(self.embed.weight)
         self.proj = CastedLinear(trigram_dim, model_dim, bias=False) if trigram_dim != model_dim else None
@@ -892,8 +896,27 @@ def build_tensor_sensitivities(grad_sens: dict, grad_sens_count: int, num_layers
             elif key == 'down':
                 tensor_sens[f'blocks.{i}.mlp.proj.weight'] = arr_norm[i].item()
     return tensor_sens
+
+
+def sanitize_gradquant_fracs(int7_frac: float, int5_frac: float) -> tuple[float, float]:
+    """Clamp and normalize GradQuant tier fractions to a valid, non-overlapping split."""
+    default_int7, default_int5 = (0.1, 0.2)
+    int7 = float(int7_frac) if math.isfinite(float(int7_frac)) else default_int7
+    int5 = float(int5_frac) if math.isfinite(float(int5_frac)) else default_int5
+    int7 = min(max(int7, 0.0), 1.0)
+    int5 = min(max(int5, 0.0), 1.0)
+    cap = 0.95
+    total = int7 + int5
+    if total > cap and total > 0.0:
+        scale = cap / total
+        int7 *= scale
+        int5 *= scale
+    return (int7, int5)
+
+
 def mixed_quantize_int6(state_dict: dict, int6_cats: set, tensor_sensitivities: dict | None=None, int7_frac: float=0.1, int5_frac: float=0.2):
     """GPTQ-lite quantization with optional GradQuant tiered int5/int6/int7."""
+    (int7_frac, int5_frac) = sanitize_gradquant_fracs(int7_frac, int5_frac)
     clip_range_map: dict[str, int] = {}
     if tensor_sensitivities and len(tensor_sensitivities) > 0:
         svals = sorted(tensor_sensitivities.values()); n_s = len(svals)
@@ -1237,11 +1260,14 @@ def main() -> None:
         log0(f'Serialized model: {model_bytes} bytes')
         log0(f'Code size: {code_bytes} bytes')
     sd_cpu = {k: v.detach().cpu() for (k, v) in export_sd.items()}; unbanked_sd = _unbank_state_dict(sd_cpu, args.num_layers)
+    int7_frac, int5_frac = sanitize_gradquant_fracs(args.gradquant_int7_frac, args.gradquant_int5_frac)
+    if args.gradquant_enabled and (abs(int7_frac - args.gradquant_int7_frac) > 1e-12 or abs(int5_frac - args.gradquant_int5_frac) > 1e-12):
+        log0(f'gradquant:normalized fractions int7_frac={int7_frac:.4f} int5_frac={int5_frac:.4f}')
     tensor_sensitivities = None
     if args.gradquant_enabled and grad_sens_count > 0:
         tensor_sensitivities = build_tensor_sensitivities(grad_sens, grad_sens_count, args.num_layers)
-        log0(f'gradquant:using {len(tensor_sensitivities)} tensor sensitivities int7_frac={args.gradquant_int7_frac} int5_frac={args.gradquant_int5_frac}')
-    (quant_result, quant_meta) = mixed_quantize_int6(unbanked_sd, {'mlp', 'attn'}, tensor_sensitivities=tensor_sensitivities, int7_frac=args.gradquant_int7_frac, int5_frac=args.gradquant_int5_frac); quant_buf = io.BytesIO()
+        log0(f'gradquant:using {len(tensor_sensitivities)} tensor sensitivities int7_frac={int7_frac} int5_frac={int5_frac}')
+    (quant_result, quant_meta) = mixed_quantize_int6(unbanked_sd, {'mlp', 'attn'}, tensor_sensitivities=tensor_sensitivities, int7_frac=int7_frac, int5_frac=int5_frac); quant_buf = io.BytesIO()
     torch.save({'w': quant_result, 'm': quant_meta}, quant_buf)
     quant_raw = quant_buf.getvalue(); quant_blob = lzma.compress(quant_raw, preset=9)
     if master_process:
